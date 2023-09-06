@@ -1,0 +1,72 @@
+version: '3.3'
+
+services:
+  test_zookeeper:
+    container_name: test_zookeeper
+    image: zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - test
+
+  test_kafka:
+    container_name: test_kafka
+    image: bitnami/kafka
+    ports:
+      - "9092:9092"
+    environment:
+#      KAFKA_CFG_ZOOKEEPER_CONNECT: test_zookeeper:2181
+#      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: test_zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://:9094,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://test_kafka:9094,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+#      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    depends_on:
+      - test_zookeeper
+    networks:
+      - test
+
+  mysql:
+    container_name: outbox_mysql
+    image: mysql
+    restart: always
+    networks:
+      - test
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_USER=admin
+      - MYSQL_PASSWORD=password
+      - MYSQL_DATABASE=outbox
+    ports:
+      - '3307:3306'
+    volumes:
+      - outbox_mysql:/var/lib/mysql
+
+  test_debezium_kafka_connect:
+    container_name: test_debezium_kafka_connect
+    image: quay.io/debezium/connect:2.3
+    ports:
+      - "8083:8083"
+    environment:
+      CONFIG_STORAGE_TOPIC: my_connect_configs
+      OFFSET_STORAGE_TOPIC: my_connect_offsets
+      STATUS_STORAGE_TOPIC: my_connect_statuses
+      BOOTSTRAP_SERVERS: test_kafka:9094
+    depends_on:
+      - mysql
+      - test_zookeeper
+      - test_kafka
+    links:
+      - mysql
+      - test_zookeeper
+    networks:
+      - test
+
+networks:
+  test:
+    driver: bridge
+
+volumes:
+  outbox_mysql: {}
